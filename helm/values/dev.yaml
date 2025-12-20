@@ -1,5 +1,9 @@
 # Development environment values
 
+# Disable persistence for local dev (faster restarts, no stale PVC issues)
+persistence:
+  enabled: false
+
 resources:
   requests:
     memory: "256Mi"
