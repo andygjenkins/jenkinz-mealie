@@ -1,0 +1,76 @@
+# Mealie Helm Chart - Default Values
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/mealie-recipes/mealie
+  tag: "v2.6.0"
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 9000
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+  hosts:
+    - host: mealie.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "100m"
+  limits:
+    memory: "1Gi"
+    cpu: "1000m"
+
+persistence:
+  enabled: true
+  size: 1Gi
+  storageClass: ""
+  accessMode: ReadWriteOnce
+
+# Mealie configuration
+mealie:
+  timezone: "Europe/Amsterdam"
+  baseUrl: "http://mealie.local"
+  allowSignup: true
+  maxWorkers: 1
+  webConcurrency: 1
+
+# PostgreSQL subchart configuration (Bitnami)
+postgresql:
+  enabled: false
+  auth:
+    username: mealie
+    password: mealie-dev-password
+    database: mealie
+
+# External/built-in PostgreSQL (used when postgresql.enabled=false)
+externalDatabase:
+  host: ""
+  user: mealie
+  password: mealie-dev-password
+  database: mealie
+  image:
+    repository: postgres
+    tag: "15-alpine"
+  persistence:
+    size: 1Gi
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"

@@ -1,0 +1,50 @@
+# Dependencies
+helm/mealie/charts/
+*.tgz
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tilt
+.tilt-settings.json
+tilt_modules/
+
+# Kubernetes
+kubeconfig
+*.kubeconfig
+
+# Secrets - NEVER commit production secrets
+**/secrets.yaml
+**/sealed-secrets.yaml
+*.pem
+*.key
+*.crt
+!helm/mealie/templates/secret.yaml
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Claude/AI
+.claude/
+
+# Beads (local issue tracking)
+.beads/
+
+# Terraform (if used later)
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Backup files
+*.bak
+*.backup

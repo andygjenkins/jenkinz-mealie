@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mealie.fullname" . }}
+  labels:
+    {{- include "mealie.labels" . | nindent 4 }}
+data:
+  PUID: "1000"
+  PGID: "1000"
+  TZ: {{ .Values.mealie.timezone | quote }}
+  MAX_WORKERS: {{ .Values.mealie.maxWorkers | quote }}
+  WEB_CONCURRENCY: {{ .Values.mealie.webConcurrency | quote }}
+  BASE_URL: {{ .Values.mealie.baseUrl | quote }}
+  ALLOW_SIGNUP: {{ .Values.mealie.allowSignup | quote }}

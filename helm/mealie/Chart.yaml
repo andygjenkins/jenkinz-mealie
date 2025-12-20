@@ -1,0 +1,12 @@
+apiVersion: v2
+name: mealie
+description: Mealie recipe management application with PostgreSQL
+type: application
+version: 0.1.0
+appVersion: "v2.6.0"
+
+dependencies:
+  - name: postgresql
+    version: "16.4.1"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: postgresql.enabled
