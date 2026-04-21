@@ -57,7 +57,7 @@ dig +short grafana.jenkinz.net
 ### 2. Traefik metrics (one-time)
 
 Apply the K3s `HelmChartConfig` that enables Traefik's `/metrics` endpoint
-on port 9100:
+on port 9101 (9100 is claimed by node-exporter):
 
 ```bash
 KUBECONFIG=~/.kube/mealie-prod.yaml kubectl apply -f k8s/observability/traefik-metrics.yaml
@@ -96,7 +96,33 @@ KUBECONFIG=~/.kube/mealie-prod.yaml kubectl -n mealie get secret grafana-admin -
 # Expect: ["admin-password", "admin-user"]
 ```
 
-### 5. Deploy
+### 5. Install the Prometheus Operator CRDs (one-time)
+
+kube-prometheus-stack's own CRD installer uses a Helm Job that runs
+`kubectl apply`, which fails on these CRDs — they exceed the 262 KB
+`last-applied-configuration` annotation limit. Workaround: apply the CRDs
+out-of-band via **server-side apply** once, then tell the subchart to skip
+its installer (already done in `helm/mealie/values.yaml` —
+`kube-prometheus-stack.crds.enabled: false`).
+
+```bash
+# Extract CRDs from the pulled subchart tarball
+mkdir -p /tmp/kps-crds
+tar xzf helm/mealie/charts/kube-prometheus-stack-*.tgz -C /tmp/kps-crds --strip-components=3 "kube-prometheus-stack/charts/crds/crds/"
+
+# Server-side apply — handles the large CRDs cleanly
+KUBECONFIG=~/.kube/mealie-prod.yaml kubectl apply --server-side --force-conflicts -f /tmp/kps-crds/crds/
+```
+
+Expect 10 `serverside-applied` lines covering `alertmanagers`,
+`alertmanagerconfigs`, `podmonitors`, `probes`, `prometheusagents`,
+`prometheuses`, `prometheusrules`, `scrapeconfigs`, `servicemonitors`,
+`thanosrulers`.
+
+On future subchart version bumps, re-run this step before `just deploy-prod`
+so the CRDs match the new operator version.
+
+### 6. Deploy
 
 ```bash
 export MEALIE_SECRET_KEY="$(op read 'op://Personal/Mealie – SECRET_KEY (prod)/credential')"

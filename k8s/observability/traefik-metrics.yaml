@@ -1,5 +1,5 @@
 # Enable Prometheus metrics on K3s's bundled Traefik, on an internal-only
-# `metrics` entryPoint (:9100). K3s picks up this HelmChartConfig and
+# `metrics` entryPoint (:9101). K3s picks up this HelmChartConfig and
 # re-renders the Traefik HelmChart manifest on the next reconcile.
 #
 # Apply once: kubectl apply -f k8s/observability/traefik-metrics.yaml
@@ -13,6 +13,9 @@ metadata:
   namespace: kube-system
 spec:
   valuesContent: |-
+    # Enable Prometheus metrics on the built-in `metrics` entryPoint (port 9101).
+    # The Traefik chart ships a `metrics` port in its defaults; we only need to
+    # make sure it lands on the Service so ServiceMonitor can scrape it.
     metrics:
       prometheus:
         enabled: true
@@ -22,13 +25,12 @@ spec:
         addServicesLabels: true
     ports:
       metrics:
-        port: 9100
-        expose:
-          default: false
-        exposedPort: 9100
+        port: 9101
+        exposedPort: 9101
         protocol: TCP
-    # Expose metrics service so annotation-based scrape discovery finds it.
+        expose:
+          default: true       # exposes on ClusterIP; Hetzner firewall blocks 9101 externally
     podAnnotations:
       prometheus.io/scrape: "true"
-      prometheus.io/port: "9100"
+      prometheus.io/port: "9101"
       prometheus.io/path: "/metrics"

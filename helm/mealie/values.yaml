@@ -104,6 +104,13 @@ observability:
 
 # ─── kube-prometheus-stack subchart overrides (only read when observability.enabled) ───
 kube-prometheus-stack:
+  # CRDs are installed out-of-band via server-side apply from
+  # `helm/mealie/charts/kube-prometheus-stack-<ver>.tgz` → `charts/crds/crds/`.
+  # The chart's Job-based CRD installer hits kubectl's 262KB annotation limit
+  # on these (very large) CRDs, so we disable it and manage CRDs ourselves.
+  # Runbook: k8s/observability/README.md "CRDs" section.
+  crds:
+    enabled: false
   # We ship our own PrometheusRule; don't install the upstream default bundle.
   defaultRules:
     create: false
@@ -112,12 +119,19 @@ kube-prometheus-stack:
   kubeScheduler:         { enabled: false }
   kubeProxy:             { enabled: false }
   kubeEtcd:              { enabled: false }
-  # Admission webhooks require cert-manager integration or TLS bootstrap we don't need at family scale.
+  # Admission webhooks validate PrometheusRule / ServiceMonitor / etc. before the
+  # operator reconciles them. At family scale we get enough safety from
+  # code-reviewed YAML in version control; the webhook layer also causes a
+  # first-deploy race (our PrometheusRule gets admitted before the operator
+  # pod is Ready, which fails with "no endpoints available"). Disabled.
   prometheusOperator:
     admissionWebhooks:
-      patch: { enabled: false }
-      certManager:
-        enabled: false
+      enabled: false
+    # Disable operator TLS — it's only needed to serve admission webhooks (now
+    # disabled). Keeps the operator pod from trying to mount a non-existent
+    # cert Secret (`<release>-admission`).
+    tls:
+      enabled: false
     resources:
       requests: { memory: "100Mi", cpu: "50m" }
       limits:   { memory: "200Mi", cpu: "200m" }
@@ -132,6 +146,11 @@ kube-prometheus-stack:
   prometheus:
     prometheusSpec:
       retention: 7d
+      # Attach cluster="mealie-prod" to every scraped series so dashboards
+      # and alerts can filter by cluster. Sourced from observability.cluster
+      # via prod.yaml (dev gets "mealie-dev" from values.yaml default).
+      externalLabels:
+        cluster: mealie-prod
       # Watch for ServiceMonitors / PodMonitors / PrometheusRules in ALL namespaces.
       # Our CRs live in the mealie namespace; cert-manager's SMs may live in cert-manager.
       serviceMonitorSelectorNilUsesHelmValues: false

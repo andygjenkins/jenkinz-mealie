@@ -41,7 +41,8 @@ spec:
       interval: 30s
       path: /metrics
 ---
-# Traefik metrics — Traefik runs in kube-system, exposes /metrics on :9100
+# Traefik metrics — Traefik runs in kube-system, exposes /metrics on :9101
+# (9100 is claimed by prometheus-node-exporter's DaemonSet)
 # once `k8s/observability/traefik-metrics.yaml` is applied.
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
