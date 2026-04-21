@@ -1,0 +1,65 @@
+{{- if .Values.seed.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "mealie.fullname" . }}-seed
+  labels:
+    {{- include "mealie.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: seed
+          image: curlimages/curl:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              API="http://{{ include "mealie.fullname" . }}:{{ .Values.service.port }}/api"
+
+              echo "Waiting for Mealie to be ready..."
+              until curl -sf "$API/app/about" > /dev/null 2>&1; do
+                echo "Waiting..."
+                sleep 5
+              done
+              echo "Mealie is ready!"
+
+              echo "Logging in as default admin..."
+              RESPONSE=$(curl -s -X POST "$API/auth/token" \
+                -H "Content-Type: application/x-www-form-urlencoded" \
+                -d "username=changeme@example.com&password=MyPassword")
+
+              TOKEN=$(echo "$RESPONSE" | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
+
+              if [ -z "$TOKEN" ]; then
+                echo "Failed to login - admin may already be configured"
+                exit 0
+              fi
+
+              AUTH="Authorization: Bearer $TOKEN"
+
+              echo "Getting admin user ID..."
+              SELF=$(curl -s "$API/users/self" -H "$AUTH")
+              ADMIN_ID=$(echo "$SELF" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+
+              echo "Updating admin credentials..."
+              curl -s -X PUT "$API/users/$ADMIN_ID" \
+                -H "$AUTH" -H "Content-Type: application/json" \
+                -d '{"email":"{{ .Values.seed.admin.email }}","username":"{{ .Values.seed.admin.username }}","fullName":"{{ .Values.seed.admin.fullName }}"}' > /dev/null
+
+              curl -s -X PUT "$API/users/$ADMIN_ID/password" \
+                -H "$AUTH" -H "Content-Type: application/json" \
+                -d '{"currentPassword":"MyPassword","newPassword":"{{ .Values.seed.admin.password }}"}' > /dev/null
+
+              echo ""
+              echo "Seed complete!"
+              echo "  Admin: {{ .Values.seed.admin.email }} / {{ .Values.seed.admin.password }}"
+{{- end }}

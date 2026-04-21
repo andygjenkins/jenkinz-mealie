@@ -27,6 +27,10 @@ spec:
                 name: {{ include "mealie.fullname" . }}
             - secretRef:
                 name: {{ include "mealie.fullname" . }}
+            {{- if .Values.email.enabled }}
+            - secretRef:
+                name: {{ .Values.email.existingSecret | default "mealie-smtp" }}
+            {{- end }}
           {{- if .Values.persistence.enabled }}
           volumeMounts:
             - name: data

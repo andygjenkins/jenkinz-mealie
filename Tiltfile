@@ -1,6 +1,10 @@
 # Mealie Local Development with Tilt
 # Run with: tilt up
 
+# Ensure namespace exists
+load('ext://namespace', 'namespace_create')
+namespace_create('mealie')
+
 # Render Helm chart to YAML and deploy
 k8s_yaml(helm(
     './helm/mealie',
@@ -22,6 +26,16 @@ k8s_resource(
     labels=['database'],
 )
 
+# Seed job - runs after Mealie is ready
+# Creates admin@test.com / test credentials
+local_resource(
+    'seed',
+    cmd='./scripts/seed.sh http://localhost:9000/api',
+    resource_deps=['mealie'],
+    labels=['setup'],
+    allow_parallel=True,
+)
+
 # Local development notes
 print("""
 ╔══════════════════════════════════════════════════════════════╗
@@ -29,5 +43,6 @@ print("""
 ╠══════════════════════════════════════════════════════════════╣
 ║  Mealie UI:      http://localhost:9000                       ║
 ║  PostgreSQL:     localhost:5432                              ║
+║  Admin login:    changeme@example.com / testtest             ║
 ╚══════════════════════════════════════════════════════════════╝
 """)

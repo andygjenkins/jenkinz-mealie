@@ -48,6 +48,23 @@ spec:
               command: ["pg_isready", "-U", {{ .Values.externalDatabase.user | quote }}]
             initialDelaySeconds: 5
             periodSeconds: 5
+        {{- if .Values.observability.enabled }}
+        - name: postgres-exporter
+          image: "{{ .Values.observability.postgresExporter.image.repository }}:{{ .Values.observability.postgresExporter.image.tag }}"
+          imagePullPolicy: {{ .Values.observability.postgresExporter.image.pullPolicy }}
+          ports:
+            - containerPort: 9187
+              name: metrics
+          env:
+            - name: DATA_SOURCE_URI
+              value: "localhost:5432/{{ .Values.externalDatabase.database }}?sslmode=disable"
+            - name: DATA_SOURCE_USER
+              value: {{ .Values.externalDatabase.user | quote }}
+            - name: DATA_SOURCE_PASS
+              value: {{ .Values.externalDatabase.password | quote }}
+          resources:
+            {{- toYaml .Values.observability.postgresExporter.resources | nindent 12 }}
+        {{- end }}
   volumeClaimTemplates:
     - metadata:
         name: postgres-data

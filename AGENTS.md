@@ -1,68 +1,58 @@
-<!-- OPENSPEC:START -->
-# OpenSpec Instructions
-
-These instructions are for AI assistants working in this project.
-
-Always open `@/openspec/AGENTS.md` when the request:
-- Mentions planning or proposals (words like proposal, spec, change, plan)
-- Introduces new capabilities, breaking changes, architecture shifts, or big performance/security work
-- Sounds ambiguous and you need the authoritative spec before coding
-
-Use `@/openspec/AGENTS.md` to learn:
-- How to create and apply change proposals
-- Spec format and conventions
-- Project structure and guidelines
-
-Keep this managed block so 'openspec update' can refresh the instructions.
-
-<!-- OPENSPEC:END -->
-
 # Agent Instructions
 
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
-File beads to track any work that you think will take longer than 2 minutes to finish.
+This project uses **OpenSpec** (skills-based) for spec-driven development. Track non-trivial
+work as OpenSpec changes under `openspec/changes/` rather than an external issue tracker.
 
-When undertaking code review - file beads issues as you go.
+For all software dependencies / tools - use the context7 MCP server to get the latest docs.
 
-For all software dependencies / tools - use context7 mcp server to get latest docs.
+For features and implementation - focus on local first (e.g., k8s running in Tilt). For task
+confirmation, ensure an automated test / script / justfile recipe exists that demonstrates the
+change/behaviour. ALL tests must pass before a task is considered complete.
 
-For features and implementation - focus on local first - e.g. k8s running in Tilt & for task confirmation, ensure that there is an automated test / script / justfile recipe present, that demonstrates the change/behaviour. ALL tests need to pass, before a task can be considered complete.
+## OpenSpec Quick Reference
 
-## Quick Reference
+Use the slash commands (or equivalent skills):
+
+- `/opsx:propose` – create a new change with proposal, specs, and tasks in one step
+- `/opsx:explore` – think through ideas, clarify requirements before proposing
+- `/opsx:apply` – implement the tasks in an approved change
+- `/opsx:archive` – archive the change once deployed
+
+CLI helpers:
 
 ```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --status in_progress  # Claim work
-bd close <id>         # Complete work
-bd sync               # Sync with git
+openspec list              # active changes
+openspec list --specs      # deployed capabilities
+openspec show <item>       # view a change or spec
+openspec validate --strict # validate everything
+openspec archive <id> -y   # archive a completed change
 ```
 
 ## Landing the Plane (Session Completion)
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until
+`git push` succeeds.
 
 **MANDATORY WORKFLOW:**
 
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
+1. **Capture remaining work** – open or update an OpenSpec change for any follow-up.
+2. **Run quality gates** (if code changed) – tests, linters, builds.
+3. **Update task checklists** – tick off completed items in `tasks.md`.
+4. **PUSH TO REMOTE** – this is MANDATORY:
 
    ```bash
    git pull --rebase
-   bd sync
    git push
    git status  # MUST show "up to date with origin"
    ```
 
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
+5. **Clean up** – clear stashes, prune remote branches.
+6. **Verify** – all changes committed AND pushed.
+7. **Hand off** – provide context for the next session.
 
 **CRITICAL RULES:**
 
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
+- Work is NOT complete until `git push` succeeds.
+- NEVER stop before pushing – that leaves work stranded locally.
+- NEVER say "ready to push when you are" – YOU must push.
+- If push fails, resolve and retry until it succeeds.

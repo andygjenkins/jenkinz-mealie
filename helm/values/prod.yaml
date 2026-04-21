@@ -1,0 +1,133 @@
+# Production values for Mealie on Hetzner CX33 (K3s).
+#
+# Secrets (mealie.secretKey, externalDatabase.password) are intentionally left
+# empty in this file. They're injected at deploy time by `just deploy-prod` via
+# `helm --set` from the MEALIE_SECRET_KEY and POSTGRES_PASSWORD env vars, which
+# should come from 1Password.
+
+persistence:
+  enabled: true
+  size: 5Gi
+
+# Seed disabled in prod: admin bootstrap is manual via the Mealie UI on first
+# visit (change password immediately). Extra households can be added afterwards
+# via Admin → Manage Households or via a one-shot `scripts/seed.sh` run with
+# SEED_ADMIN_PASSWORD overridden.
+seed:
+  enabled: false
+
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "100m"
+  limits:
+    memory: "1Gi"
+    cpu: "1000m"
+
+mealie:
+  baseUrl: "https://mealie.jenkinz.net"
+  allowSignup: false
+  defaultGroup: "Jenkinz"
+  defaultHousehold: "JenkinsJnrs"
+  # secretKey injected via `helm --set mealie.secretKey=$MEALIE_SECRET_KEY`.
+  secretKey: ""
+
+# Public HTTPS via Traefik (K3s built-in) + cert-manager (phase 4).
+# Cloudflare proxies in Full (strict) mode and terminates to Traefik on 443.
+ingress:
+  enabled: true
+  className: traefik
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+  hosts:
+    - host: mealie.jenkinz.net
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - hosts:
+        - mealie.jenkinz.net
+      secretName: mealie-tls
+
+# Use the chart's built-in PostgreSQL StatefulSet.
+postgresql:
+  enabled: false
+
+externalDatabase:
+  user: mealie
+  database: mealie
+  # password injected via `helm --set externalDatabase.password=$POSTGRES_PASSWORD`.
+  password: ""
+  persistence:
+    size: 5Gi
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+# Phase 6 — encrypted off-site backups via restic → Backblaze B2.
+# Credentials live in the `backup-credentials` Secret, bootstrapped by
+# `just backup-bootstrap`. See k8s/backups/README.md.
+backup:
+  enabled: true
+  b2Bucket: "jenkinz-mealie-backup"
+
+# Phase 7 — outbound SMTP via Resend. SMTP_USER and SMTP_PASSWORD live in the
+# `mealie-smtp` Secret, bootstrapped by `just smtp-bootstrap`. DNS records
+# (SPF, DKIM) are at Cloudflare. See k8s/smtp/README.md.
+email:
+  enabled: true
+  host: "smtp.resend.com"
+  port: 587
+  fromName: "Mealie"
+  fromEmail: "no-reply@mealie.jenkinz.net"
+  authStrategy: "TLS"
+
+# Phase 8 — self-hosted monitoring via kube-prometheus-stack.
+# Grafana admin creds live in the `grafana-admin` Secret (just grafana-admin-bootstrap).
+# Alertmanager reuses the `mealie-smtp` Secret (phase 7) for email delivery.
+# See k8s/observability/README.md for Cloudflare DNS + Uptime Robot setup.
+observability:
+  enabled: true
+  cluster: "mealie-prod"
+  grafana:
+    host: "grafana.jenkinz.net"
+    existingSecret: "grafana-admin"
+  prometheus:
+    retention: "7d"
+  alertmanager:
+    smtpFromAddress: "alerts@mealie.jenkinz.net"
+    smtpToAddress: "andygjenkins@gmail.com"
+    existingSmtpSecret: "mealie-smtp"
+
+# Alertmanager config for prod — real SMTP via Resend, real recipient.
+kube-prometheus-stack:
+  alertmanager:
+    config:
+      global:
+        resolve_timeout: 5m
+        smtp_smarthost: "smtp.resend.com:587"
+        smtp_from: "alerts@mealie.jenkinz.net"
+        smtp_hello: "mealie.jenkinz.net"
+        smtp_auth_username_file: "/etc/alertmanager/secrets/mealie-smtp/SMTP_USER"
+        smtp_auth_password_file: "/etc/alertmanager/secrets/mealie-smtp/SMTP_PASSWORD"
+        smtp_require_tls: true
+      route:
+        group_by: [alertname, severity]
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 12h
+        receiver: email-andy
+      receivers:
+        - name: email-andy
+          email_configs:
+            - to: andygjenkins@gmail.com
+              send_resolved: true
+              headers:
+                subject: "[Mealie {{`{{ .Status | toUpper }}`}}] {{`{{ .GroupLabels.alertname }}`}}"
+

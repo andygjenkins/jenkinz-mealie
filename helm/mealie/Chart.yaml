@@ -10,3 +10,7 @@ dependencies:
     version: "16.4.1"
     repository: "https://charts.bitnami.com/bitnami"
     condition: postgresql.enabled
+  - name: kube-prometheus-stack
+    version: "83.6.0"
+    repository: "https://prometheus-community.github.io/helm-charts"
+    condition: observability.enabled

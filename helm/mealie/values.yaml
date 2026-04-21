@@ -4,7 +4,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/mealie-recipes/mealie
-  tag: "v2.6.0"
+  tag: "v3.16.0"
   pullPolicy: IfNotPresent
 
 nameOverride: ""
@@ -47,6 +47,14 @@ mealie:
   allowSignup: true
   maxWorkers: 1
   webConcurrency: 1
+  # Optional: override Mealie's bundled defaults for the first-boot admin's group/household.
+  # Leave empty to keep Mealie's defaults ("Home" / "Family").
+  defaultGroup: ""
+  defaultHousehold: ""
+  # Mealie's JWT signing key. Leave empty in dev (Mealie auto-generates in memory —
+  # tokens invalidate on pod restart). In prod, inject a 32-byte hex value via
+  # `helm --set mealie.secretKey=...` so sessions survive pod restarts.
+  secretKey: ""
 
 # PostgreSQL subchart configuration (Bitnami)
 postgresql:
@@ -55,6 +63,182 @@ postgresql:
     username: mealie
     password: mealie-dev-password
     database: mealie
+
+# Seed job configuration (creates test users on fresh install)
+seed:
+  enabled: false
+  admin:
+    email: "admin@test.com"
+    username: "admin"
+    fullName: "Test Admin"
+    password: "test"
+
+# Observability — self-hosted Prometheus + Grafana + Alertmanager via the
+# `prometheus-community/kube-prometheus-stack` subchart.
+# Grafana admin credentials live in the `grafana-admin` Secret, created by
+# `just grafana-admin-bootstrap`. Alertmanager reuses the `mealie-smtp`
+# Secret from phase 7. See k8s/observability/README.md.
+observability:
+  enabled: false
+  cluster: "mealie-dev"
+  grafana:
+    host: "grafana.local"               # prod overrides: grafana.jenkinz.net
+    existingSecret: "grafana-admin"
+    # Storage is configured via kube-prometheus-stack.grafana.persistence.size
+  prometheus:
+    retention: "7d"
+    # Storage is configured via kube-prometheus-stack.prometheus.prometheusSpec.storageSpec
+  alertmanager:
+    smtpFromAddress: "alerts@mealie.local"
+    smtpToAddress: "andygjenkins@gmail.com"
+    existingSmtpSecret: "mealie-smtp"   # must contain SMTP_USER and SMTP_PASSWORD
+  # postgres-exporter sidecar on the Postgres StatefulSet (scraped via ServiceMonitor).
+  postgresExporter:
+    image:
+      repository: quay.io/prometheuscommunity/postgres-exporter
+      tag: "v0.15.0"
+      pullPolicy: IfNotPresent
+    resources:
+      requests: { memory: "32Mi", cpu: "20m" }
+      limits:   { memory: "64Mi", cpu: "100m" }
+
+# ─── kube-prometheus-stack subchart overrides (only read when observability.enabled) ───
+kube-prometheus-stack:
+  # We ship our own PrometheusRule; don't install the upstream default bundle.
+  defaultRules:
+    create: false
+  # K3s embeds these components; scraping the individual services yields no data.
+  kubeControllerManager: { enabled: false }
+  kubeScheduler:         { enabled: false }
+  kubeProxy:             { enabled: false }
+  kubeEtcd:              { enabled: false }
+  # Admission webhooks require cert-manager integration or TLS bootstrap we don't need at family scale.
+  prometheusOperator:
+    admissionWebhooks:
+      patch: { enabled: false }
+      certManager:
+        enabled: false
+    resources:
+      requests: { memory: "100Mi", cpu: "50m" }
+      limits:   { memory: "200Mi", cpu: "200m" }
+  kube-state-metrics:
+    resources:
+      requests: { memory: "50Mi", cpu: "50m" }
+      limits:   { memory: "128Mi", cpu: "200m" }
+  prometheus-node-exporter:
+    resources:
+      requests: { memory: "30Mi", cpu: "20m" }
+      limits:   { memory: "100Mi", cpu: "200m" }
+  prometheus:
+    prometheusSpec:
+      retention: 7d
+      # Watch for ServiceMonitors / PodMonitors / PrometheusRules in ALL namespaces.
+      # Our CRs live in the mealie namespace; cert-manager's SMs may live in cert-manager.
+      serviceMonitorSelectorNilUsesHelmValues: false
+      podMonitorSelectorNilUsesHelmValues:    false
+      ruleSelectorNilUsesHelmValues:          false
+      probeSelectorNilUsesHelmValues:         false
+      resources:
+        requests: { memory: "400Mi", cpu: "100m" }
+        limits:   { memory: "800Mi", cpu: "1000m" }
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 10Gi
+  grafana:
+    admin:
+      existingSecret: "grafana-admin"
+      userKey: admin-user
+      passwordKey: admin-password
+    persistence:
+      enabled: true
+      size: 2Gi
+    # Auto-import any ConfigMap labeled grafana_dashboard=1 from any namespace.
+    sidecar:
+      dashboards:
+        enabled: true
+        label: grafana_dashboard
+        searchNamespace: ALL
+      datasources:
+        enabled: true
+    # We ship our own Ingress template (grafana-ingress.yaml) for consistent
+    # cert-manager + Traefik annotations with the Mealie Ingress.
+    ingress:
+      enabled: false
+    resources:
+      requests: { memory: "128Mi", cpu: "50m" }
+      limits:   { memory: "384Mi", cpu: "500m" }
+  alertmanager:
+    alertmanagerSpec:
+      resources:
+        requests: { memory: "64Mi", cpu: "20m" }
+        limits:   { memory: "128Mi", cpu: "200m" }
+      storage:
+        volumeClaimTemplate:
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 1Gi
+      # Mount the existing mealie-smtp Secret into the Alertmanager pod so
+      # smtp_auth_username_file / smtp_auth_password_file can reference its keys.
+      secrets:
+        - mealie-smtp
+    # Minimal default config — prod.yaml overrides with real SMTP + receivers.
+    # This stub just makes the subchart render cleanly in k3d if someone enables
+    # observability locally.
+    config:
+      global:
+        resolve_timeout: 5m
+      route:
+        group_by: [alertname]
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 12h
+        receiver: "null"
+      receivers:
+        - name: "null"
+
+# Outbound email via SMTP (password resets, household invitations).
+# Credentials (SMTP_USER, SMTP_PASSWORD) live in the `mealie-smtp` Secret
+# created by `just smtp-bootstrap` — NEVER in this file. See k8s/smtp/README.md.
+email:
+  enabled: false
+  host: ""                        # e.g. "smtp.resend.com"
+  port: 587
+  fromName: "Mealie"
+  fromEmail: ""                   # e.g. "no-reply@mealie.jenkinz.net"
+  authStrategy: "TLS"             # TLS | SSL | NONE
+  existingSecret: "mealie-smtp"   # must contain SMTP_USER and SMTP_PASSWORD keys
+
+# Encrypted, deduplicated off-site backups via restic → Backblaze B2.
+# Credentials live in the `backup-credentials` Secret, created by `just backup-bootstrap`.
+# See k8s/backups/README.md for full setup + restore procedure.
+backup:
+  enabled: false
+  schedule: "0 3 * * *"   # daily 03:00 UTC
+  image:
+    repository: postgres
+    tag: "15-alpine"      # has pg_dump; restic installed via `apk add` at run time
+    pullPolicy: IfNotPresent
+  b2Bucket: ""             # e.g. "jenkinz-mealie-backups"
+  resticPath: "mealie"    # prefix inside the B2 bucket
+  retention:
+    daily: 7
+    weekly: 4
+    monthly: 12
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "50m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  existingSecret: "backup-credentials"
+  # Restic pack cache lives at /tmp (ephemeral). Keeps layers small; no PVC needed.
 
 # External/built-in PostgreSQL (used when postgresql.enabled=false)
 externalDatabase:

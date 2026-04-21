@@ -1,0 +1,63 @@
+{{- if .Values.backup.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "mealie.fullname" . }}-backup
+  labels:
+    {{- include "mealie.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            {{- include "mealie.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: backup
+              image: "{{ .Values.backup.image.repository }}:{{ .Values.backup.image.tag }}"
+              imagePullPolicy: {{ .Values.backup.image.pullPolicy }}
+              envFrom:
+                - secretRef:
+                    name: {{ .Values.backup.existingSecret }}
+              resources:
+                {{- toYaml .Values.backup.resources | nindent 16 }}
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -euo pipefail
+                  echo "→ installing restic..."
+                  apk add --no-cache restic >/dev/null
+
+                  echo "→ initializing restic repo if needed..."
+                  restic snapshots >/dev/null 2>&1 || restic init
+
+                  echo "→ taking backup..."
+                  PGPASSWORD="$POSTGRES_PASSWORD" pg_dump \
+                    --host="$POSTGRES_HOST" \
+                    --username="$POSTGRES_USER" \
+                    --dbname="$POSTGRES_DB" \
+                    --no-owner --no-privileges --format=plain \
+                    | restic backup --stdin --stdin-filename mealie.sql \
+                        --tag daily --tag automated
+
+                  echo "→ pruning per retention policy..."
+                  restic forget \
+                    --keep-daily {{ .Values.backup.retention.daily }} \
+                    --keep-weekly {{ .Values.backup.retention.weekly }} \
+                    --keep-monthly {{ .Values.backup.retention.monthly }} \
+                    --prune
+
+                  echo "→ current snapshots:"
+                  restic snapshots --compact
+                  echo "✓ backup complete."
+{{- end }}

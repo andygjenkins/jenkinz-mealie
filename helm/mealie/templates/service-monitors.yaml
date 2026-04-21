@@ -1,0 +1,64 @@
+{{- if .Values.observability.enabled }}
+# Service fronting the postgres-exporter sidecar on the Postgres StatefulSet.
+# Separate from the main `mealie-postgres` Service so Prometheus scrape traffic
+# is isolated from app-DB traffic.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mealie.fullname" . }}-postgres-exporter
+  labels:
+    {{- include "mealie.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics-exporter
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: metrics
+      port: 9187
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: {{ include "mealie.name" . }}-postgres
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "mealie.fullname" . }}-postgres-exporter
+  labels:
+    {{- include "mealie.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics-exporter
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: metrics-exporter
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics
+---
+# Traefik metrics — Traefik runs in kube-system, exposes /metrics on :9100
+# once `k8s/observability/traefik-metrics.yaml` is applied.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "mealie.fullname" . }}-traefik
+  labels:
+    {{- include "mealie.labels" . | nindent 4 }}
+    app.kubernetes.io/component: traefik-metrics
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: traefik
+  namespaceSelector:
+    matchNames:
+      - kube-system
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics
+{{- end }}

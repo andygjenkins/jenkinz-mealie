@@ -12,3 +12,16 @@ data:
   WEB_CONCURRENCY: {{ .Values.mealie.webConcurrency | quote }}
   BASE_URL: {{ .Values.mealie.baseUrl | quote }}
   ALLOW_SIGNUP: {{ .Values.mealie.allowSignup | quote }}
+  {{- with .Values.mealie.defaultGroup }}
+  DEFAULT_GROUP: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.mealie.defaultHousehold }}
+  DEFAULT_HOUSEHOLD: {{ . | quote }}
+  {{- end }}
+  {{- if .Values.email.enabled }}
+  SMTP_HOST: {{ .Values.email.host | quote }}
+  SMTP_PORT: {{ .Values.email.port | quote }}
+  SMTP_FROM_NAME: {{ .Values.email.fromName | quote }}
+  SMTP_FROM_EMAIL: {{ .Values.email.fromEmail | quote }}
+  SMTP_AUTH_STRATEGY: {{ .Values.email.authStrategy | quote }}
+  {{- end }}

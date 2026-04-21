@@ -1,0 +1,52 @@
+#cloud-config
+# Mealie production VPS bootstrap.
+#
+# Runs once on first boot. To re-apply, destroy the VPS and re-create
+# (see infra/README.md). ${SSH_PUBKEY} and ${TS_AUTHKEY} are substituted
+# at render time by `just vps-create` via envsubst.
+
+# Non-root admin user with passwordless sudo and the local SSH key.
+users:
+  - name: andy
+    groups: [adm, sudo]
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    ssh_authorized_keys:
+      - ${SSH_PUBKEY}
+
+# SSH hardening: key-only, no root login.
+ssh_pwauth: false
+disable_root: true
+
+# System packages.
+package_update: true
+package_upgrade: true
+packages:
+  - ufw
+  - curl
+  - ca-certificates
+  - jq
+
+# First-boot provisioning.
+runcmd:
+  # Firewall: default-deny, open only SSH + HTTP(S). K8s API (6443) is never
+  # opened to the internet — we reach it over the Tailscale mesh instead.
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow 22/tcp
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  - ufw --force enable
+
+  # Install Tailscale and join the tailnet using the reusable auth key.
+  # --ssh lets us optionally use `tailscale ssh` in addition to regular OpenSSH.
+  - curl -fsSL https://tailscale.com/install.sh | sh
+  - tailscale up --authkey=${TS_AUTHKEY} --hostname=mealie-prod --ssh
+
+  # K3s server install. Defaults keep Traefik, ServiceLB, local-path-provisioner,
+  # and metrics-server. --tls-san adds the Tailscale IP + MagicDNS name to the
+  # server cert so kubectl from any tailnet node trusts it. 0644 kubeconfig lets
+  # 'andy' read it without sudo (only reachable from an authenticated session).
+  - bash -c 'curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --write-kubeconfig-mode 0644 --tls-san=$(tailscale ip -4) --tls-san=mealie-prod" sh -'
+
+final_message: "mealie-prod bootstrap complete. Tailscale + K3s installed; fetch kubeconfig with 'just vps-kubeconfig'."

@@ -1,18 +1,17 @@
-<!-- OPENSPEC:START -->
-# OpenSpec Instructions
+# Claude Code Instructions
 
-These instructions are for AI assistants working in this project.
+## OpenSpec (spec-driven development)
 
-Always open `@/openspec/AGENTS.md` when the request:
-- Mentions planning or proposals (words like proposal, spec, change, plan)
-- Introduces new capabilities, breaking changes, architecture shifts, or big performance/security work
-- Sounds ambiguous and you need the authoritative spec before coding
+This project uses [OpenSpec](https://openspec.dev) via the skills-based setup.
 
-Use `@/openspec/AGENTS.md` to learn:
-- How to create and apply change proposals
-- Spec format and conventions
-- Project structure and guidelines
+Use the `/opsx:*` slash commands (or the equivalent `openspec-*` skills) to:
+- `/opsx:propose` – draft a new change with artifacts in one step
+- `/opsx:explore` – think through ideas, clarify requirements
+- `/opsx:apply` – implement the tasks in a change
+- `/opsx:archive` – finalize and archive a completed change
 
-Keep this managed block so 'openspec update' can refresh the instructions.
+Project planning context lives in `openspec/project.md` (legacy) and — going forward — the
+`context:` section of `openspec/config.yaml`. Migrate content from `project.md` into
+`config.yaml` as the repo evolves, then delete `project.md`.
 
-<!-- OPENSPEC:END -->
+Run `openspec update` periodically to keep the skills current.

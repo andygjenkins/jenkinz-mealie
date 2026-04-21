@@ -1,0 +1,78 @@
+# Restore-drill Job: restores the latest restic snapshot into a scratch
+# PostgreSQL and verifies with a real query.
+#
+# This manifest is applied by scripts/restore-drill.sh into an ephemeral
+# namespace. The `backup-credentials` Secret must exist in the same namespace
+# (copied from the `mealie` namespace by the script).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: restore-drill
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: restore-drill
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: drill
+          image: postgres:15-alpine
+          envFrom:
+            - secretRef:
+                name: backup-credentials
+          env:
+            # Override POSTGRES_USER from the Secret (which is `mealie`) so the
+            # scratch DB is created with the default `postgres` superuser.
+            # Dumps are `--no-owner --no-privileges`, so any role can load them.
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              value: drilltemp
+            - name: POSTGRES_DB
+              value: mealie
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          resources:
+            requests: { memory: "256Mi", cpu: "100m" }
+            limits:   { memory: "1Gi",   cpu: "1000m" }
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              echo "→ installing restic..."
+              apk add --no-cache restic >/dev/null
+
+              echo "→ starting local postgres (scratch)..."
+              docker-entrypoint.sh postgres &
+              PG_PID=$!
+
+              echo "→ waiting for postgres to accept connections..."
+              for i in $(seq 1 60); do
+                pg_isready -h localhost -U postgres >/dev/null 2>&1 && break
+                sleep 1
+              done
+              pg_isready -h localhost -U postgres
+
+              echo "→ pulling latest restic snapshot..."
+              restic dump latest mealie.sql > /tmp/mealie.sql
+              echo "  snapshot size: $(wc -c </tmp/mealie.sql) bytes"
+
+              echo "→ loading into scratch postgres..."
+              PGPASSWORD=drilltemp psql -q -h localhost -U postgres -d mealie -f /tmp/mealie.sql >/dev/null
+
+              echo "→ verifying..."
+              COUNT=$(PGPASSWORD=drilltemp psql -Atc "SELECT count(*) FROM users;" -h localhost -U postgres -d mealie)
+              echo "  user count after restore: $COUNT"
+
+              if [ "$COUNT" -lt 1 ]; then
+                echo "✗ FAIL: zero users after restore."
+                exit 1
+              fi
+
+              echo "✓ Restore drill passed ($COUNT users)."
+              kill $PG_PID 2>/dev/null || true
+              wait $PG_PID 2>/dev/null || true
+              exit 0

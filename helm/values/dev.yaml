@@ -4,6 +4,16 @@
 persistence:
   enabled: false
 
+# Disable ingress for local dev — Tilt port-forwards Mealie to localhost:9000 directly.
+# Prod uses Traefik (K3s built-in) + cert-manager; that's wired in prod.yaml.
+ingress:
+  enabled: false
+
+# Seed disabled - Tilt's local_resource runs scripts/seed.sh instead
+# This avoids Helm hook issues with tilt's helm template approach
+seed:
+  enabled: false
+
 resources:
   requests:
     memory: "256Mi"
@@ -15,6 +25,10 @@ resources:
 mealie:
   baseUrl: "http://mealie.local"
   allowSignup: true
+  defaultGroup: "Jenkinz"
+  # Admin lands in JenkinsJnrs; the other four (JenkinsSnrs, Munchkins, Frenkins,
+  # Hongkins) are created by scripts/seed.sh via the admin API.
+  defaultHousehold: "JenkinsJnrs"
 
 # Use built-in PostgreSQL with official image
 postgresql:

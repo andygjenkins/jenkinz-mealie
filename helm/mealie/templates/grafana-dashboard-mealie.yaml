@@ -1,0 +1,15 @@
+{{- if .Values.observability.enabled }}
+# Grafana picks up any ConfigMap in the searchNamespace (ALL) carrying the
+# label `grafana_dashboard=1` and auto-imports its contents as a dashboard.
+# Configured via kube-prometheus-stack.grafana.sidecar.dashboards in values.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mealie.fullname" . }}-dashboard-overview
+  labels:
+    {{- include "mealie.labels" . | nindent 4 }}
+    grafana_dashboard: "1"
+data:
+  mealie-overview.json: |
+    {{- .Files.Get "dashboards/mealie-overview.json" | nindent 4 }}
+{{- end }}

@@ -1,0 +1,14 @@
+# Self-destructing end-to-end test of the DNS-01 issuance path.
+# Applied (and deleted) by `just tls-test`.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: tls-test
+  namespace: default
+spec:
+  secretName: tls-test-tls
+  issuerRef:
+    name: letsencrypt-staging
+    kind: ClusterIssuer
+  dnsNames:
+    - test.jenkinz.net

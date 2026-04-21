@@ -1,0 +1,33 @@
+{{- if .Values.observability.enabled }}
+# Grafana Ingress — separate from the main Mealie Ingress so Grafana gets
+# its own cert + hostname. Traefik routes by host; cert-manager issues via
+# the same DNS-01 solver as the Mealie cert.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "mealie.fullname" . }}-grafana
+  labels:
+    {{- include "mealie.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana-ingress
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - {{ .Values.observability.grafana.host | quote }}
+      secretName: grafana-tls
+  rules:
+    - host: {{ .Values.observability.grafana.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Release.Name }}-grafana
+                port:
+                  number: 80
+{{- end }}

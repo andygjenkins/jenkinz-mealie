@@ -1,0 +1,90 @@
+{{- if .Values.observability.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "mealie.fullname" . }}-alerts
+  labels:
+    {{- include "mealie.labels" . | nindent 4 }}
+    app.kubernetes.io/component: alerts
+    # Ensures kube-prometheus-stack's Prometheus picks this up when its rule
+    # selector uses label matching (defense in depth; ruleSelectorNil* also set).
+    release: {{ .Release.Name }}
+spec:
+  groups:
+    - name: mealie-{{ .Values.observability.cluster }}
+      interval: 30s
+      rules:
+        # ─────────────────────────────────────────────────────────────────
+        # 1. Mealie Deployment has 0 Ready replicas for >5 min.
+        # ─────────────────────────────────────────────────────────────────
+        - alert: MealieDeploymentNotReady
+          expr: kube_deployment_status_replicas_ready{namespace="{{ .Release.Namespace }}", deployment="mealie"} < 1
+          for: 5m
+          labels:
+            severity: critical
+            app: mealie
+            cluster: {{ .Values.observability.cluster | quote }}
+          annotations:
+            summary: "Mealie Deployment has 0 Ready replicas"
+            description: "Mealie in namespace {{ "{{" }} $labels.namespace {{ "}}" }} has 0 Ready replicas for >5 minutes. The app is user-visibly down."
+
+        # ─────────────────────────────────────────────────────────────────
+        # 2. No successful mealie-backup Job in the last 26 hours.
+        # ─────────────────────────────────────────────────────────────────
+        - alert: NoRecentMealieBackup
+          expr: |
+            time() - max(kube_job_status_completion_time{namespace="{{ .Release.Namespace }}", job_name=~"mealie-backup.*"}) > 26 * 3600
+          for: 15m
+          labels:
+            severity: high
+            app: mealie
+            cluster: {{ .Values.observability.cluster | quote }}
+          annotations:
+            summary: "No successful Mealie backup in >26h"
+            description: "The mealie-backup CronJob has not completed successfully in the last 26 hours. The restic → B2 pipeline may have drifted — check the CronJob's last Job status and the backup-credentials Secret."
+
+        # ─────────────────────────────────────────────────────────────────
+        # 3. PVC in the mealie namespace is >85% full.
+        # ─────────────────────────────────────────────────────────────────
+        - alert: MealiePVCFilling
+          expr: |
+            kubelet_volume_stats_used_bytes{namespace="{{ .Release.Namespace }}"}
+            / kubelet_volume_stats_capacity_bytes > 0.85
+          for: 30m
+          labels:
+            severity: high
+            app: mealie
+            cluster: {{ .Values.observability.cluster | quote }}
+          annotations:
+            summary: "Mealie PVC {{ "{{" }} $labels.persistentvolumeclaim {{ "}}" }} is >85% full"
+            description: "PVC {{ "{{" }} $labels.persistentvolumeclaim {{ "}}" }} in namespace {{ "{{" }} $labels.namespace {{ "}}" }} is at {{ "{{" }} $value | humanizePercentage {{ "}}" }} usage. Either free space or expand the PVC."
+
+        # ─────────────────────────────────────────────────────────────────
+        # 4. TLS certificate mealie-tls expires in <14 days.
+        # ─────────────────────────────────────────────────────────────────
+        - alert: MealieTLSExpiring
+          expr: |
+            (certmanager_certificate_expiration_timestamp_seconds{name="mealie-tls"} - time()) / 86400 < 14
+          for: 1h
+          labels:
+            severity: medium
+            app: mealie
+            cluster: {{ .Values.observability.cluster | quote }}
+          annotations:
+            summary: "mealie-tls certificate expires in <14 days"
+            description: "The mealie-tls certificate expires in {{ "{{" }} $value | humanize {{ "}}" }} days. cert-manager should auto-renew via Cloudflare DNS-01; investigate if it hasn't. Check `kubectl -n mealie describe cert mealie-tls`."
+
+        # ─────────────────────────────────────────────────────────────────
+        # 5. PostgreSQL exporter reports pg_up == 0 for >5 min.
+        # ─────────────────────────────────────────────────────────────────
+        - alert: MealiePostgresDown
+          expr: pg_up{namespace="{{ .Release.Namespace }}"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            app: mealie
+            cluster: {{ .Values.observability.cluster | quote }}
+          annotations:
+            summary: "Mealie PostgreSQL is unreachable"
+            description: "postgres-exporter reports pg_up=0 for >5 minutes. Check `kubectl -n mealie get pods -l app.kubernetes.io/name=mealie-postgres` and the postgres-exporter sidecar logs."
+{{- end }}

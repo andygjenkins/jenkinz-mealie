@@ -37,8 +37,9 @@ kubeconfig
 # Claude/AI
 .claude/
 
-# Beads (local issue tracking)
-.beads/
+# Playwright MCP artifacts (screenshots, snapshots, console logs)
+.playwright-mcp/
+mealie-*.png
 
 # Terraform (if used later)
 *.tfstate

@@ -1,0 +1,34 @@
+# Enable Prometheus metrics on K3s's bundled Traefik, on an internal-only
+# `metrics` entryPoint (:9100). K3s picks up this HelmChartConfig and
+# re-renders the Traefik HelmChart manifest on the next reconcile.
+#
+# Apply once: kubectl apply -f k8s/observability/traefik-metrics.yaml
+# Watch rollout: kubectl -n kube-system rollout status deployment/traefik
+#
+# Survives K3s upgrades — HelmChartConfig is the supported override mechanism.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    metrics:
+      prometheus:
+        enabled: true
+        entryPoint: metrics
+        addEntryPointsLabels: true
+        addRoutersLabels: true
+        addServicesLabels: true
+    ports:
+      metrics:
+        port: 9100
+        expose:
+          default: false
+        exposedPort: 9100
+        protocol: TCP
+    # Expose metrics service so annotation-based scrape discovery finds it.
+    podAnnotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "9100"
+      prometheus.io/path: "/metrics"
